@@ -1,5 +1,12 @@
 # MVI Architecture with Jetpack Compose and Ktor
 
+## MVI Work Flow
+![Work flow image](images/image_1.png)
+
+## MVI Data layers
+![data layers png](images/image_2.png)
+
+
 This Android project demonstrates the MVI (Model-View-Intent) architecture using Jetpack Compose for the UI, Ktor for networking, and Kotlin Coroutines for asynchronous operations. It fetches a list of posts from a REST API and allows navigation to a next screen via an App Bar button.
 
 ## MVI Explained
