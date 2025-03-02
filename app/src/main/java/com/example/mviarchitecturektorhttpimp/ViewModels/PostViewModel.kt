@@ -14,9 +14,6 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
-
-
-
 /*  Why Use Channel Instead of Flow for Navigation Events?
     What’s the Difference?
    Flow:
@@ -41,21 +38,47 @@ import kotlinx.coroutines.launch
      Channel.CONFLATED:
               Capacity 1 with conflation, keeps only the latest event and never suspends—perfect for navigation as it ensures the most recent intent is processed once without stacking or delays. */
 
+/* 🔹 Does ViewModel Fit MVI Rules?
+            ✅ Yes, if used correctly
+            ❌ No, if misused (e.g., mutable state inside ViewModel)
+
+  How to use ViewModel in MVI correctly?
+            ViewModel as a Bridge (Not a State Holder)
+
+            It acts as an Intent processor that collects UI events (Intent), processes them, and exposes State to the UI.
+            It should not hold any mutable state inside it.
+            State Management in ViewModel
+
+           Use StateFlow (or LiveData) to expose a single source of truth to the UI.
+           Keep state immutable.
+           Business Logic Should Stay in Use Cases/Repository
+
+          ViewModel should only process intents and delegate business logic to Use Cases or Repository.
+          Use ViewModel for Surviving Config Changes
+
+          Since ViewModel survives configuration changes, it can help maintain the current state without needing to restore it from scratch. */
 
 class PostViewModel(
-    private val apiService: ApiService
+    private val apiService: ApiService // ✅ Dependency Injection for easy testing
 ) : ViewModel() {
+
+    // 🔹 State Management (Using Immutable StateFlow)
+    // _state is private (internal updates), state is exposed (read-only)
     private val _state = MutableStateFlow<PostState>(PostState.Loading)
-    val state: MutableStateFlow<PostState> = _state
+    val state = _state // ✅ Exposing immutable StateFlow
 
+    // 🔹 Alternative state representation using PostStateMethod2
     private val _state2 = MutableStateFlow(PostStateMethod2())
-    val state2: MutableStateFlow<PostStateMethod2> = _state2
+    val state2 = _state2 // ✅ Another immutable StateFlow for a different state model
 
-    // Channel for navigation events
+    // 🔹 Navigation Events (Using Channel to handle one-time events)
     private val _navigationEvents = Channel<NavigationEvent>(Channel.CONFLATED)
-    val navigationEvents = _navigationEvents.receiveAsFlow()
+    val navigationEvents = _navigationEvents.receiveAsFlow() // ✅ Exposing as Flow to prevent direct modification
 
-
+    /**
+     * Processes UI intents and delegates actions accordingly.
+     * This keeps UI logic out of the ViewModel, ensuring **unidirectional data flow**.
+     */
     fun handleIntent(intent: PostIntent) {
         when (intent) {
             is PostIntent.LoadPosts -> loadPosts()
@@ -64,37 +87,54 @@ class PostViewModel(
         }
     }
 
+    /**
+     * Fetches posts using an alternative state representation (`PostStateMethod2`).
+     * Uses `update {}` to ensure immutability and safe state modification.
+     */
     private fun loadPostsMethod2() {
         viewModelScope.launch {
-            _state2.update { it.copy(isLoading = true, error = null) }
+            _state2.update { it.copy(isLoading = true, error = null) } // ✅ Updating immutable state correctly
             try {
                 val posts = apiService.getPosts()
-                _state2.update { it.copy(isLoading = false, posts = posts) }
+                _state2.update { it.copy(isLoading = false, posts = posts) } // ✅ State updated with posts
             } catch (e: Exception) {
                 Log.e("PostViewModel", "Failed to load posts", e)
                 _state2.update { it.copy(isLoading = false, error = e.message ?: "Unknown error") }
             }
         }
     }
+
+    /**
+     * Fetches posts and updates `PostState`.
+     * Uses `try-catch` for error handling and follows **unidirectional data flow**.
+     */
     private fun loadPosts() {
         viewModelScope.launch {
-            _state.value = PostState.Loading
+            _state.value = PostState.Loading // ✅ Set initial loading state
             _state.value = try {
-                PostState.Posts(apiService.getPosts())
+                PostState.Posts(apiService.getPosts()) // ✅ New state with posts (immutability preserved)
             } catch (e: Exception) {
-                PostState.Error(e.localizedMessage)
+                PostState.Error(e.localizedMessage) // ✅ Error state (immutable)
             }
         }
     }
 
+    /**
+     * Sends a **one-time** navigation event.
+     * Uses `Channel.CONFLATED` to ensure only the latest event is processed (no event stacking).
+     */
     private fun navigateToNextScreen() {
         viewModelScope.launch {
-            _navigationEvents.send(NavigationEvent.NavigateToNextScreen)
+            _navigationEvents.send(NavigationEvent.NavigateToNextScreen) // ✅ Ensuring navigation event is handled once
         }
     }
 
+    /**
+     * Cleans up resources when the ViewModel is destroyed.
+     * Ensures `apiService.close()` is called to properly release resources.
+     */
     override fun onCleared() {
-        apiService.close() // Close HttpClient when ViewModel is cleared
+        apiService.close() // ✅ Proper cleanup (e.g., closing HttpClient)
         super.onCleared()
     }
 }
